@@ -1,0 +1,149 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function role() {
+      return signedIn() ? request.auth.token.role : null;
+    }
+
+    function isAdmin() {
+      return role() == 'administrador';
+    }
+
+    function isStaff() {
+      return role() in ['administrador', 'analista'];
+    }
+
+    function isTechnician() {
+      return role() == 'tecnico';
+    }
+
+    function isClient() {
+      return role() == 'cliente';
+    }
+
+    function belongsToClient(clienteId) {
+      return isClient() && request.auth.token.clienteId == clienteId;
+    }
+
+    function hasTechnicianAccess(data) {
+      return isTechnician() && data.tecnicoUids is list && request.auth.uid in data.tecnicoUids;
+    }
+
+    function canReadTenantRecord(data) {
+      return isStaff() || belongsToClient(data.clienteId) || hasTechnicianAccess(data);
+    }
+
+    function denyWrites() {
+      // All writes go through audited Cloud Functions using the Admin SDK.
+      return false;
+    }
+
+    match /usuarios/{uid} {
+      allow read: if signedIn() && (isStaff() || request.auth.uid == uid);
+      allow create, update, delete: if denyWrites();
+    }
+
+    match /tecnicos/{uid} {
+      allow read: if signedIn() && (isStaff() || (isTechnician() && request.auth.uid == uid));
+      allow create, update, delete: if denyWrites();
+    }
+
+    match /clientes/{clienteId} {
+      allow read: if signedIn() && (isStaff() || belongsToClient(clienteId));
+      allow create, update, delete: if denyWrites();
+    }
+
+    match /unidades/{unidadeId} {
+      allow read: if signedIn() && canReadTenantRecord(resource.data);
+      allow create, update, delete: if denyWrites();
+    }
+
+    match /ativos/{ativoId} {
+      allow read: if signedIn() && canReadTenantRecord(resource.data);
+      allow create, update, delete: if denyWrites();
+    }
+
+    match /planosPreventivos/{planoId} {
+      allow read: if signedIn() && canReadTenantRecord(resource.data);
+      allow create, update, delete: if denyWrites();
+    }
+
+    match /execucoesPreventivas/{execucaoId} {
+      allow read: if signedIn() && (
+        isStaff()
+        || (isTechnician() && resource.data.tecnicoUids is list && request.auth.uid in resource.data.tecnicoUids)
+      );
+      allow create, update, delete: if denyWrites();
+    }
+
+    match /os/{osId} {
+      allow read: if signedIn() && (
+        isStaff()
+        || belongsToClient(resource.data.clienteId)
+        || (isTechnician() && (
+          resource.data.tecnicoId == request.auth.uid
+          || (resource.data.tecnicoUids is list && request.auth.uid in resource.data.tecnicoUids)
+        ))
+      );
+      allow create, update, delete: if denyWrites();
+
+      match /eventos/{eventoId} {
+        function parentOrder() {
+          return get(/databases/$(database)/documents/os/$(osId)).data;
+        }
+        allow read: if signedIn() && (
+          isStaff()
+          || belongsToClient(parentOrder().clienteId)
+          || (isTechnician() && (
+            parentOrder().tecnicoId == request.auth.uid
+            || (parentOrder().tecnicoUids is list && request.auth.uid in parentOrder().tecnicoUids)
+          ))
+        );
+        allow create, update, delete: if denyWrites();
+      }
+    }
+
+    match /sensores/{sensorId} {
+      allow read: if signedIn() && canReadTenantRecord(resource.data);
+      allow create, update, delete: if denyWrites();
+    }
+
+    match /leiturasSensores/{leituraId} {
+      allow read: if signedIn() && canReadTenantRecord(resource.data);
+      allow create, update, delete: if denyWrites();
+    }
+
+    match /agregadosSensoresHora/{agregadoId} {
+      allow read: if signedIn() && canReadTenantRecord(resource.data);
+      allow create, update, delete: if denyWrites();
+    }
+
+    match /alertas/{alertaId} {
+      allow read: if signedIn() && canReadTenantRecord(resource.data);
+      allow create, update, delete: if denyWrites();
+    }
+
+    match /mensagensWhatsApp/{mensagemId} {
+      allow read: if signedIn() && isStaff();
+      allow create, update, delete: if denyWrites();
+    }
+
+    match /auditoria/{eventoId} {
+      allow read: if signedIn() && isStaff();
+      allow create, update, delete: if denyWrites();
+    }
+
+    match /avisosOperacionais/{avisoId} {
+      allow read: if signedIn() && isStaff();
+      allow create, update, delete: if denyWrites();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

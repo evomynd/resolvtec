@@ -1,0 +1,58 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function role() {
+      return signedIn() ? request.auth.token.role : null;
+    }
+
+    function assignedTechnician(osId) {
+      let order = firestore.get(/databases/(default)/documents/os/$(osId)).data;
+      return role() == 'tecnico' && (
+        order.tecnicoId == request.auth.uid
+        || (order.tecnicoUids is list && request.auth.uid in order.tecnicoUids)
+      );
+    }
+
+    function assignedPreventiveTechnician(clienteId, planId, executionId, topicId, stage) {
+      let execution = firestore.get(/databases/(default)/documents/execucoesPreventivas/$(executionId)).data;
+      let topic = execution.topicos.get(topicId, {});
+      return role() == 'tecnico'
+        && execution.clienteId == clienteId
+        && execution.planoId == planId
+        && execution.tecnicoUids is list
+        && request.auth.uid in execution.tecnicoUids
+        && (
+          (stage == 'antes' && topic.status == 'aguardando_foto_antes')
+          || (stage == 'depois' && topic.status == 'em_andamento' && topic.iniciadoPor == request.auth.uid)
+        );
+    }
+
+    match /clientes/{clienteId}/os/{osId}/{fileName} {
+      // Uploads are limited to assigned technicians; downloads use short-lived signed URLs from Functions.
+      allow read: if false;
+      allow create: if signedIn()
+        && assignedTechnician(osId)
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*|application/pdf');
+      allow update, delete: if false;
+    }
+
+    match /clientes/{clienteId}/planosPreventivos/{planId}/execucoes/{executionId}/topicos/{topicId}/{stage}/{fileName} {
+      allow read: if false;
+      allow create: if signedIn()
+        && assignedPreventiveTechnician(clienteId, planId, executionId, topicId, stage)
+        && stage in ['antes', 'depois']
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+      allow update, delete: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

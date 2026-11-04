@@ -1,0 +1,19 @@
+{
+  "name": "Resolv.tec | Gestão predial inteligente",
+  "short_name": "Resolv.tec",
+  "description": "Gestão de manutenção predial para equipes e clientes Resolv.tec.",
+  "lang": "pt-BR",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#101314",
+  "theme_color": "#101314",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
